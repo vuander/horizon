@@ -38,7 +38,10 @@ fn releases(version: ServerVersion) -> &'static [&'static str] {
         ServerVersion::V1_21_3 => &["1.21.2", "1.21.3"],
         ServerVersion::V1_21_1 => &["1.21", "1.21.1"],
         ServerVersion::V1_20_6 => &["1.20.5", "1.20.6"],
-        ServerVersion::Current | ServerVersion::V1_20_3 | ServerVersion::V1_20_2 => &[],
+        ServerVersion::Current
+        | ServerVersion::V1_20_3
+        | ServerVersion::V1_20_2
+        | ServerVersion::V1_8 => &[],
     }
 }
 
@@ -517,7 +520,10 @@ mod tests {
         for v in ServerVersion::ALL {
             let expected = !matches!(
                 v,
-                ServerVersion::Current | ServerVersion::V1_20_3 | ServerVersion::V1_20_2
+                ServerVersion::Current
+                    | ServerVersion::V1_20_3
+                    | ServerVersion::V1_20_2
+                    | ServerVersion::V1_8
             );
             assert_eq!(own_core_pack(v), expected, "{v:?}");
         }

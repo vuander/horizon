@@ -69,6 +69,10 @@ pub struct Session {
     pub(super) incoming: Mutex<VecDeque<(i32, Vec<u8>)>>,
     /// Packet bodies to send right after the one being sent.
     pub(super) outgoing: Mutex<Vec<Vec<u8>>>,
+    /// A 1.8 server's own connection state ([`super::v1_8`]).
+    legacy_1_8: super::v1_8::Shared,
+    /// 1.8 bodies to send after the one being sent, already in 1.8's numbering.
+    legacy_1_8_outgoing: Mutex<Vec<Vec<u8>>>,
 }
 
 impl Session {
@@ -94,6 +98,8 @@ impl Session {
             kinds: Mutex::new(HashMap::new()),
             incoming: Mutex::new(VecDeque::new()),
             outgoing: Mutex::new(Vec::new()),
+            legacy_1_8: Default::default(),
+            legacy_1_8_outgoing: Mutex::new(Vec::new()),
         }
     }
     pub fn reading(&self) -> State {
@@ -128,6 +134,22 @@ impl Session {
     /// A packet the server sent, as the pinned version numbers and lays it out. `None` drops it: Horizon
     /// knows no such packet.
     pub fn clientbound(&self, id: i32, payload: Vec<u8>) -> Result<Option<(i32, Vec<u8>)>> {
+        if self.version != ServerVersion::V1_8 {
+            return self.clientbound_steps(id, payload);
+        }
+        // A 1.8 packet stands for zero or more 1.20.2 packets, each taken up the shared steps in turn;
+        // Horizon reads the first, then the rest (and what each step added after it) in order.
+        let packets = super::v1_8::clientbound(&self.legacy_1_8, self.reading(), id, &payload)?;
+        for (id, payload) in packets {
+            let at = self.incoming.lock().unwrap().len();
+            if let Some(packet) = self.clientbound_steps(id, payload)? {
+                self.incoming.lock().unwrap().insert(at, packet);
+            }
+        }
+        Ok(self.incoming.lock().unwrap().pop_front())
+    }
+
+    fn clientbound_steps(&self, id: i32, payload: Vec<u8>) -> Result<Option<(i32, Vec<u8>)>> {
         let state = self.reading();
         let _legacy = self
             .version
@@ -233,6 +255,15 @@ impl Session {
         let Some((mapped, payload)) = translate::serverbound(self, state, id, payload)? else {
             return Ok(None);
         };
+        if self.version == ServerVersion::V1_8 {
+            let mut bodies = super::v1_8::serverbound(&self.legacy_1_8, state, mapped, &payload)?;
+            if bodies.is_empty() {
+                return Ok(None);
+            }
+            let first = bodies.remove(0);
+            self.legacy_1_8_outgoing.lock().unwrap().extend(bodies);
+            return Ok(Some(first));
+        }
         let mut w = Writer::new();
         w.varint(mapped);
         w.bytes(&payload);
@@ -245,7 +276,21 @@ impl Session {
     }
     /// Bodies the translation added after the packet just sent, in the server's numbering.
     pub fn take_outgoing(&self) -> Vec<Vec<u8>> {
-        std::mem::take(&mut *self.outgoing.lock().unwrap())
+        let added = std::mem::take(&mut *self.outgoing.lock().unwrap());
+        if self.version != ServerVersion::V1_8 {
+            return added;
+        }
+        // The shared steps add 1.20.2 bodies; a 1.8 server reads them rewritten.
+        let mut out = std::mem::take(&mut *self.legacy_1_8_outgoing.lock().unwrap());
+        for body in added {
+            let mut r = Reader::new(&body);
+            let Ok(id) = r.varint() else { continue };
+            match super::v1_8::serverbound(&self.legacy_1_8, self.writing(), id, r.rest()) {
+                Ok(bodies) => out.extend(bodies),
+                Err(e) => log::warn!("Horizon: could not translate a packet for 1.8: {e}"),
+            }
+        }
+        out
     }
 
     /// The handshake states this server's protocol, and its intent moves both directions on.

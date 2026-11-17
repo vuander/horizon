@@ -133,6 +133,12 @@ fn path() -> PathBuf {
         .join(FILE)
 }
 
+/// The folder of the prepared resources the tables are read from (`facts.json` sits beside them).
+pub fn resources() -> PathBuf {
+    let file = path();
+    file.parent().map(Path::to_path_buf).unwrap_or(file)
+}
+
 /// Whether the prepared tables are there (tests skip without them).
 pub fn available() -> bool {
     path().is_file()

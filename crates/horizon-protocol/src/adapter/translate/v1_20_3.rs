@@ -147,7 +147,9 @@ pub(super) fn upgrade_block_entity(
         return;
     }
     let names = match session.version {
-        ServerVersion::V1_20_2 => crate::adapter::v1_20_2_ids::BLOCK_ENTITY_TYPE_NAMES,
+        ServerVersion::V1_20_2 | ServerVersion::V1_8 => {
+            crate::adapter::v1_20_2_ids::BLOCK_ENTITY_TYPE_NAMES
+        }
         ServerVersion::V1_20_3 => crate::adapter::v1_20_3_ids::BLOCK_ENTITY_TYPE_NAMES,
         _ => return,
     };

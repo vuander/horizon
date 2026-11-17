@@ -36,7 +36,7 @@ use dynamic::{as_str, string};
 use horizon_core::nbt::Tag;
 use schema::{Key, Ty, key, walk};
 pub use single::{MAX_DEPTH, UpgradeError, upgrade_block_entity, upgrade_entity};
-pub use tables::{available as tables_available, set_resources};
+pub use tables::{available as tables_available, resources as tables_resources, set_resources};
 
 /// The DataVersion of the game.
 pub const CURRENT: i32 = crate::DATA_VERSION;
